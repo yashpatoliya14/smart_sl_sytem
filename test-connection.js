@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { deltaRequest, getTotalUnrealisedPnl, CONFIG } = require("./smart-sl");
+const { deltaRequest, getTotalUnrealisedPnl, syncServerTime, CONFIG } = require("./smart-sl");
 const { Telegraf } = require("telegraf");
 
 async function runDiagnostics() {
@@ -20,6 +20,8 @@ async function runDiagnostics() {
     allPassed = false;
   } else {
     try {
+      console.log("   🔄 Syncing with Delta server time...");
+      await syncServerTime();
       console.log("   🔄 Connecting to Delta Exchange API...");
       // Profile request test
       const profile = await deltaRequest("GET", "/v2/profile");

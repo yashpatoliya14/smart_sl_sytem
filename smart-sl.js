@@ -22,6 +22,27 @@ let triggered = false;
 let running = false;
 let monitorIntervalId = null;
 let lastMissingLimitAlertTime = 0;
+let serverTimeOffsetSec = 0;
+let lastTimeSync = 0;
+
+// Sync clock with Delta Exchange server to prevent timestamp rejection (must be within 5s)
+async function syncServerTime() {
+  try {
+    const res = await fetch(CONFIG.baseUrl + "/v2/tickers", { signal: AbortSignal.timeout(4000) });
+    const dateHeader = res.headers.get("date");
+    if (dateHeader) {
+      const serverEpoch = Math.floor(new Date(dateHeader).getTime() / 1000);
+      const localEpoch = Math.floor(Date.now() / 1000);
+      serverTimeOffsetSec = serverEpoch - localEpoch;
+      lastTimeSync = Date.now();
+      if (Math.abs(serverTimeOffsetSec) >= 3) {
+        console.log(`[TIME-SYNC] Synced with Delta server: adjusted clock by ${serverTimeOffsetSec}s.`);
+      }
+    }
+  } catch (err) {
+    // Non-critical: falls back to local time
+  }
+}
 
 // Read state from JSON file
 async function loadState() {
@@ -64,7 +85,8 @@ function sign(method, path, body = "") {
     throw new Error("Missing Delta Exchange API Key or Secret in environment configuration.");
   }
 
-  const timestamp = Math.floor(Date.now() / 1000).toString();
+  // Use server-synchronized timestamp
+  const timestamp = Math.floor(Date.now() / 1000 + serverTimeOffsetSec).toString();
   const message = method.toUpperCase() + timestamp + path + body;
 
   const signature = crypto
@@ -84,6 +106,11 @@ function sign(method, path, body = "") {
 
 // Standard HTTP client for Delta Exchange API
 async function deltaRequest(method, path, payload = null) {
+  // Sync server time periodically (every 10 minutes or if never synced)
+  if (Date.now() - lastTimeSync > 600000) {
+    await syncServerTime();
+  }
+
   const body = payload === null ? "" : JSON.stringify(payload);
   const headers = sign(method, path, body);
 
@@ -95,6 +122,13 @@ async function deltaRequest(method, path, payload = null) {
     signal: AbortSignal.timeout(8000),
   });
 
+  // Track server Date header if available to keep clock calibrated
+  const serverDate = response.headers.get("date");
+  if (serverDate) {
+    const serverEpoch = Math.floor(new Date(serverDate).getTime() / 1000);
+    serverTimeOffsetSec = serverEpoch - Math.floor(Date.now() / 1000);
+  }
+
   let data;
   try {
     data = await response.json();
@@ -103,7 +137,19 @@ async function deltaRequest(method, path, payload = null) {
   }
 
   if (!response.ok || data.success === false) {
-    const errMsg = data?.error?.message || data?.error || JSON.stringify(data);
+    let errMsg = "";
+    if (data?.error?.code === "ip_not_whitelisted_for_api_key") {
+      const clientIp = data?.error?.context?.client_ip || "unknown IP";
+      errMsg = `IP Whitelist Error: Your current IP (${clientIp}) is not added to your API key's whitelist on Delta Exchange! Please edit your API key in Delta Exchange settings and add this IP or remove IP restrictions.`;
+    } else if (data?.error?.code) {
+      errMsg = `${data.error.code}${data.error.context ? " - " + JSON.stringify(data.error.context) : ""}`;
+    } else if (data?.error?.message) {
+      errMsg = data.error.message;
+    } else if (typeof data?.error === "object") {
+      errMsg = JSON.stringify(data.error);
+    } else {
+      errMsg = data?.error || JSON.stringify(data);
+    }
     throw new Error(`Delta API HTTP ${response.status}: ${errMsg}`);
   }
 
@@ -358,7 +404,7 @@ function startMonitorLoop() {
   console.log(`Endpoint:    ${CONFIG.baseUrl}`);
   console.log(`Interval:    ${CONFIG.intervalMs}ms`);
 
-  loadState().then((state) => {
+  syncServerTime().then(() => loadState()).then((state) => {
     console.log(`Initial SL:  ${state.lossLimit ? `-$${state.lossLimit}` : "⚠️ NOT CONFIGURED (Waiting for Telegram)"}`);
     console.log(`Protection:  ${state.enabled && state.lossLimit ? "ENABLED" : "PAUSED (Awaiting SL value via Telegram)"}`);
     console.log(`Mode:        ${state.dryRun ? "🧪 DRY-RUN (Simulation)" : "⚡ LIVE TRADING"}`);
@@ -401,6 +447,7 @@ module.exports = {
   slEvents,
   loadState,
   saveState,
+  syncServerTime,
   deltaRequest,
   fetchUserProfile,
   getTotalUnrealisedPnl,
