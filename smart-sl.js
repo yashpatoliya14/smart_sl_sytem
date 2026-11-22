@@ -49,17 +49,28 @@ async function loadState() {
   try {
     const raw = await fs.readFile(STATE_FILE, "utf8");
     const data = JSON.parse(raw);
+
+    // .env SMART_SL_DRY_RUN takes precedence if explicitly configured
+    let dryRun = typeof data.dryRun === "boolean" ? data.dryRun : true;
+    if (process.env.SMART_SL_DRY_RUN !== undefined) {
+      dryRun = process.env.SMART_SL_DRY_RUN.trim().toLowerCase() !== "false";
+    }
+
     return {
       enabled: typeof data.enabled === "boolean" ? data.enabled : true,
       lossLimit: Number.isFinite(data.lossLimit) && data.lossLimit > 0 ? Number(data.lossLimit) : null,
-      dryRun: typeof data.dryRun === "boolean" ? data.dryRun : CONFIG.defaultDryRun,
+      dryRun,
       lastUpdated: data.lastUpdated || null
     };
   } catch (err) {
+    const isDry = process.env.SMART_SL_DRY_RUN !== undefined
+      ? process.env.SMART_SL_DRY_RUN.trim().toLowerCase() !== "false"
+      : true;
+
     const defaultState = {
       enabled: true,
       lossLimit: null, // NO hardcoded fallback: must be set via Telegram
-      dryRun: CONFIG.defaultDryRun,
+      dryRun: isDry,
       lastUpdated: new Date().toISOString()
     };
     await saveState(defaultState);

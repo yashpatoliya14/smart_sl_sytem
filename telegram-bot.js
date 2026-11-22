@@ -247,6 +247,7 @@ bot.command("reset", async (ctx) => {
 bot.command("dryrun", async (ctx) => {
   const state = await loadState();
   state.dryRun = !state.dryRun;
+  process.env.SMART_SL_DRY_RUN = String(state.dryRun);
   await saveState(state);
   return ctx.reply(`Trading mode switched to: *${state.dryRun ? "🧪 DRY-RUN (Simulation)" : "⚡ LIVE REAL TRADING"}*`, {
     parse_mode: "Markdown",
@@ -286,6 +287,7 @@ bot.action("disable", async (ctx) => {
 bot.action("toggle_dryrun", async (ctx) => {
   const state = await loadState();
   state.dryRun = !state.dryRun;
+  process.env.SMART_SL_DRY_RUN = String(state.dryRun);
   await saveState(state);
   await ctx.answerCbQuery(`Switched to ${state.dryRun ? "Simulation" : "LIVE"}`);
   return renderDashboard(ctx, true);
