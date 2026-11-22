@@ -1,0 +1,26 @@
+{
+  "name": "delta-smart-sl-system",
+  "version": "1.0.0",
+  "description": "Global Unrealised PnL Smart Stop Loss System for Delta Exchange with Telegram Bot Management",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "monitor": "node smart-sl.js",
+    "bot": "node telegram-bot.js",
+    "test": "node test-connection.js"
+  },
+  "keywords": [
+    "delta-exchange",
+    "stop-loss",
+    "smart-sl",
+    "crypto-trading",
+    "telegram-bot",
+    "risk-management"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "telegraf": "^4.16.3"
+  }
+}
