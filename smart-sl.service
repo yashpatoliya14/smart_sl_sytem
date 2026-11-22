@@ -1,0 +1,23 @@
+[Unit]
+Description=Delta Exchange Smart Stop-Loss System with Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/smart_sl_sytem
+ExecStart=/usr/bin/node /root/smart_sl_sytem/index.js
+Restart=always
+RestartSec=5s
+
+# Environment settings
+Environment=NODE_ENV=production
+EnvironmentFile=/root/smart_sl_sytem/.env
+
+# Standard output and error logging to journald / syslog
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smart-sl
+
+[Install]
+WantedBy=multi-user.target
