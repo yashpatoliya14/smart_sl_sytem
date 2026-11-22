@@ -359,8 +359,8 @@ function startMonitorLoop() {
   console.log(`Interval:    ${CONFIG.intervalMs}ms`);
 
   loadState().then((state) => {
-    console.log(`Initial SL:  -$${state.lossLimit}`);
-    console.log(`Protection:  ${state.enabled ? "ENABLED" : "DISABLED"}`);
+    console.log(`Initial SL:  ${state.lossLimit ? `-$${state.lossLimit}` : "⚠️ NOT CONFIGURED (Waiting for Telegram)"}`);
+    console.log(`Protection:  ${state.enabled && state.lossLimit ? "ENABLED" : "PAUSED (Awaiting SL value via Telegram)"}`);
     console.log(`Mode:        ${state.dryRun ? "🧪 DRY-RUN (Simulation)" : "⚡ LIVE TRADING"}`);
     console.log("=========================================\n");
   });

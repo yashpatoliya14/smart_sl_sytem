@@ -1,6 +1,6 @@
 {
   "enabled": true,
-  "lossLimit": 15,
+  "lossLimit": null,
   "dryRun": true,
   "lastUpdated": null
 }

@@ -93,19 +93,40 @@ async function renderDashboard(ctx, editInsteadOfReply = false) {
 
   const pnlSign = status.totalPnl >= 0 ? "+" : "";
   const pnlFormatted = `${pnlSign}$${status.totalPnl.toFixed(2)}`;
-  const pnlIcon = status.totalPnl >= 0 ? "🟢" : status.totalPnl <= -state.lossLimit ? "🚨" : "🟡";
+  const isBreached = state.lossLimit && status.totalPnl <= -state.lossLimit;
+  const pnlIcon = status.totalPnl >= 0 ? "🟢" : isBreached ? "🚨" : "🟡";
 
   let statusText = [
     "🛡 *DELTA EXCHANGE SMART STOP-LOSS*",
     "━━━━━━━━━━━━━━━━━━━━━━",
-    `• *Protection:* ${state.enabled ? "🟢 ENABLED" : "🔴 DISABLED"}`,
-    `• *Max Allowed Loss:* -$${state.lossLimit.toFixed(2)}`,
-    `• *Current Total PnL:* ${pnlIcon} \`${pnlFormatted}\``,
-    `• *Open Positions:* ${status.positionsCount}`,
-    `• *Engine Status:* \`${status.engine}\``,
-    `• *Trading Mode:* ${state.dryRun ? "🧪 Simulation (Dry-Run)" : "⚡ Real Trading (Live)"}`,
-    "━━━━━━━━━━━━━━━━━━━━━━",
   ];
+
+  if (!state.lossLimit) {
+    statusText.push(
+      "❌ *CONFIGURATION ERROR: STOP-LOSS NOT SET!*",
+      "Protection is currently *INACTIVE*.",
+      "",
+      "👉 *Reply with a number in this chat (e.g. `15` or `25`) or tap a preset below to activate:*",
+      "━━━━━━━━━━━━━━━━━━━━━━",
+      `• *Protection:* 🔴 WAITING FOR SL VALUE`,
+      `• *Max Allowed Loss:* ❌ NOT CONFIGURED`,
+      `• *Current Total PnL:* ${pnlIcon} \`${pnlFormatted}\``,
+      `• *Open Positions:* ${status.positionsCount}`,
+      `• *Engine Status:* \`${status.engine}\``,
+      `• *Trading Mode:* ${state.dryRun ? "🧪 Simulation (Dry-Run)" : "⚡ Real Trading (Live)"}`,
+      "━━━━━━━━━━━━━━━━━━━━━━"
+    );
+  } else {
+    statusText.push(
+      `• *Protection:* ${state.enabled ? "🟢 ENABLED" : "🔴 DISABLED"}`,
+      `• *Max Allowed Loss:* -$${state.lossLimit.toFixed(2)}`,
+      `• *Current Total PnL:* ${pnlIcon} \`${pnlFormatted}\``,
+      `• *Open Positions:* ${status.positionsCount}`,
+      `• *Engine Status:* \`${status.engine}\``,
+      `• *Trading Mode:* ${state.dryRun ? "🧪 Simulation (Dry-Run)" : "⚡ Real Trading (Live)"}`,
+      "━━━━━━━━━━━━━━━━━━━━━━"
+    );
+  }
 
   if (status.fetchError) {
     statusText.push(`⚠️ *API Warning:* \`${status.fetchError}\``);
@@ -139,7 +160,6 @@ async function renderDashboard(ctx, editInsteadOfReply = false) {
       });
     }
   } catch (err) {
-    // If message is not modified or edit fails, send fresh reply
     return await ctx.reply(text, {
       parse_mode: "Markdown",
       ...keyboard,
@@ -242,6 +262,13 @@ bot.action("home", async (ctx) => {
 
 bot.action("enable", async (ctx) => {
   const state = await loadState();
+  if (!state.lossLimit || state.lossLimit <= 0) {
+    await ctx.answerCbQuery("⚠️ Set a Stop-Loss value first!");
+    return ctx.reply(
+      "❌ *CONFIGURATION ERROR: Cannot enable protection without a Stop-Loss value!*\n\nPlease reply with a number (e.g. `15` or `25`) or choose a preset below to activate protection:",
+      { parse_mode: "Markdown", ...presetKeyboard() }
+    );
+  }
   state.enabled = true;
   await saveState(state);
   await ctx.answerCbQuery("🛡 Smart SL Enabled");
@@ -278,8 +305,9 @@ bot.action("reset_trigger", async (ctx) => {
 bot.action("change_sl", async (ctx) => {
   await ctx.answerCbQuery();
   const state = await loadState();
+  const currentMsg = state.lossLimit ? `Current Limit: *-$${state.lossLimit.toFixed(2)}*` : `Current Limit: *❌ NOT SET*`;
   return ctx.editMessageText(
-    `💰 *Select New Smart Stop Loss Threshold*\n\nCurrent Limit: *-$${state.lossLimit.toFixed(2)}*\n\nWhen overall unrealised loss reaches this value, all positions are automatically closed:`,
+    `💰 *Set Smart Stop Loss Threshold*\n\n${currentMsg}\n\nWhen overall unrealised loss reaches this value, all positions are automatically closed.\n\nChoose a preset below or simply type a number in this chat:`,
     {
       parse_mode: "Markdown",
       ...presetKeyboard(),
@@ -295,17 +323,20 @@ bot.action(/^limit:(\d+(?:\.\d+)?)$/, async (ctx) => {
 
   const state = await loadState();
   state.lossLimit = newLimit;
+  state.enabled = true; // Auto-activate once configured
   await saveState(state);
+  resetTrigger();
 
   await ctx.answerCbQuery(`Updated to -$${newLimit}`);
-  return renderDashboard(ctx, true);
+  await ctx.reply(`✅ *Smart Stop-Loss set to -$${newLimit.toFixed(2)}!*\n\n🛡 Protection is now *ACTIVE* and using this value.`, { parse_mode: "Markdown" });
+  return renderDashboard(ctx, false);
 });
 
 bot.action("custom_sl", async (ctx) => {
   await ctx.answerCbQuery();
   waitingForCustomLimit[ctx.from.id] = true;
   return ctx.reply(
-    "✏️ *Enter Custom Stop Loss Amount in USD*\n\nFor example, type `15` or `30.5` and send it:",
+    "✏️ *Enter Custom Stop Loss Amount in USD*\n\nSimply reply with your value (e.g. `15` or `30.5`):",
     {
       parse_mode: "Markdown",
       ...Markup.inlineKeyboard([[Markup.button.callback("⬅️ Cancel", "home")]]),
@@ -358,33 +389,67 @@ bot.action("confirm_emergency", async (ctx) => {
   return renderDashboard(ctx);
 });
 
-// Handle custom text input
+// Handle conversation text input
 bot.on("text", async (ctx) => {
-  if (waitingForCustomLimit[ctx.from.id]) {
-    const textVal = ctx.message.text.trim();
-    const parsed = parseFloat(textVal);
+  const rawText = ctx.message.text.trim();
 
-    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100000) {
-      return ctx.reply("❌ Invalid value. Please send a positive number (e.g. `20`).", {
-        parse_mode: "Markdown",
-      });
+  // 1. Check if user typed any number or Stop-Loss phrasing
+  // Matches: "15", "$25", "15.5", "sl 20", "set sl 25", "sl=15", "stoploss 30", "-15", etc.
+  const numMatch = rawText.match(/(?:(?:set\s+)?(?:smart\s*)?sl\s*[:=]?\s*|\$)?-?(\d+(?:\.\d+)?)\s*\$?$/i);
+
+  if (numMatch && numMatch[1]) {
+    const parsed = parseFloat(numMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= 100000) {
+      waitingForCustomLimit[ctx.from.id] = false;
+      const state = await loadState();
+      state.lossLimit = parsed;
+      state.enabled = true; // Auto-activate protection once a valid value is provided
+      await saveState(state);
+      resetTrigger(); // Clear any previous trigger
+
+      await ctx.reply(
+        `✅ *Smart Stop-Loss value set to -$${parsed.toFixed(2)}!*\n\n` +
+        `🛡 Protection is now *ACTIVE* and using this value.\n` +
+        `If total account unrealised losses reach -$${parsed.toFixed(2)}, all positions will be automatically closed.`,
+        { parse_mode: "Markdown" }
+      );
+
+      return renderDashboard(ctx);
     }
+  }
 
-    waitingForCustomLimit[ctx.from.id] = false;
-    const state = await loadState();
-    state.lossLimit = parsed;
-    await saveState(state);
-
-    await ctx.reply(`✅ Smart SL loss limit successfully updated to *-$${parsed.toFixed(2)}*`, {
+  // 2. If user was explicitly prompted for custom limit but sent invalid input
+  if (waitingForCustomLimit[ctx.from.id]) {
+    return ctx.reply("❌ Invalid value. Please reply with a positive number, e.g. `15` or `25`.", {
       parse_mode: "Markdown",
     });
+  }
 
+  // 3. Quick text shortcuts
+  const lower = rawText.toLowerCase();
+  if (lower === "status" || lower === "pnl") {
     return renderDashboard(ctx);
   }
+
+  // 4. If Stop-Loss is NOT configured, alert the user with an explicit error!
+  const state = await loadState();
+  if (!state.lossLimit) {
+    return ctx.reply(
+      "❌ *CONFIGURATION ERROR: Stop-Loss value is NOT set!*\n\n" +
+      "The Smart Stop-Loss engine cannot protect your account until a limit is specified.\n\n" +
+      "👉 *Please reply with a number (e.g. `15` or `25`) or choose a preset below to activate protection:*",
+      {
+        parse_mode: "Markdown",
+        ...presetKeyboard(),
+      }
+    );
+  }
+
+  return renderDashboard(ctx);
 });
 
 // Dispatch notifications to the authorized user
-async function sendTelegramAlert(messageText) {
+async function sendTelegramAlert(messageText, extraOptions = null) {
   if (!AUTHORIZED_ID) return;
   const ids = AUTHORIZED_ID.split(",").map((id) => id.trim());
 
@@ -392,12 +457,28 @@ async function sendTelegramAlert(messageText) {
     try {
       await bot.telegram.sendMessage(chatId, messageText, {
         parse_mode: "Markdown",
+        ...(extraOptions || {}),
       });
     } catch (err) {
       console.error(`Failed to send alert to Telegram Chat ID ${chatId}:`, err.message);
     }
   }
 }
+
+// Push error alert when Smart SL engine detects missing Stop Loss configuration
+slEvents.on("missing_limit", async () => {
+  const alertMsg = [
+    "🚨 *[SMART STOP-LOSS CONFIGURATION ERROR]*",
+    "━━━━━━━━━━━━━━━━━━━━━━",
+    "❌ *No Stop-Loss limit is currently configured!*",
+    "The monitoring engine is *PAUSED* and cannot protect positions until a value is set.",
+    "",
+    "👉 *Reply directly with a number (e.g. `15` or `25`) or tap a preset button below to activate protection immediately:*",
+    "━━━━━━━━━━━━━━━━━━━━━━",
+  ].join("\n");
+
+  await sendTelegramAlert(alertMsg, presetKeyboard());
+});
 
 // Hook into Smart SL engine events
 slEvents.on("triggered", async (evt) => {

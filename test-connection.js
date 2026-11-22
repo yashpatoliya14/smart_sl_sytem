@@ -77,6 +77,18 @@ async function runDiagnostics() {
     }
   }
 
+  // 3. Check Smart SL State
+  console.log("3. Checking Smart SL State configuration...");
+  const { loadState } = require("./smart-sl");
+  const state = await loadState();
+  if (state.lossLimit) {
+    console.log(`   ✅ Active Stop-Loss Limit: -$${state.lossLimit.toFixed(2)} (Managed via Telegram)`);
+  } else {
+    console.log(`   ⚠️ Stop-Loss Limit: NOT CONFIGURED (Must be set via Telegram before protection triggers)`);
+  }
+  console.log(`   Protection Status: ${state.enabled ? "ENABLED" : "DISABLED"}`);
+  console.log(`   Trading Mode:      ${state.dryRun ? "🧪 DRY-RUN (Simulation)" : "⚡ LIVE TRADING"}\n`);
+
   console.log("==================================================");
   if (allPassed) {
     console.log("🎉 All configured systems are operational!");
